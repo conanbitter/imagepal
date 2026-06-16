@@ -1,5 +1,6 @@
 use std::{thread, time::Duration};
 
+use console::style;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rand::RngExt;
 
@@ -7,19 +8,30 @@ fn main() {
     let m = MultiProgress::new();
 
     let op_bar = m.add(ProgressBar::new(200));
-    let spacer = m.add(ProgressBar::hidden());
     let total_bar = m.add(ProgressBar::new(5 * 300));
 
-    spacer.set_style(ProgressStyle::with_template(" ").unwrap());
+    let total_template = format!(
+        "Step {{pos:>3.yellow}}{}{{len:3.yellow}} {}{{wide_bar:.green}}{}Elapsed:   {{elapsed_precise:.yellow}}",
+        style("/").yellow(),
+        style("▕").green(),
+        style("▏").green()
+    );
 
     op_bar.set_style(
-        ProgressStyle::with_template("Step {pos:>4}/{len:4} {bar:.green.on_white} Elapsed:   {elapsed_precise}")
+        ProgressStyle::with_template(&total_template)
             .unwrap()
             .progress_chars("█▉▊▋▌▍▎▏  "),
     );
 
+    let total_template = format!(
+        "\nAttempt  {{msg:.yellow}}{} {}{{wide_bar:.green}}{}Remaining: {{eta_precise:.yellow}}",
+        style("/5").yellow(),
+        style("▕").green(),
+        style("▏").green()
+    );
+
     total_bar.set_style(
-        ProgressStyle::with_template("\nAttempt {msg}/5    {bar:.green.on_white} Remaining: {eta_precise}")
+        ProgressStyle::with_template(&total_template)
             .unwrap()
             .progress_chars("█▉▊▋▌▍▎▏  "),
     );

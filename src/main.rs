@@ -5,7 +5,6 @@ use std::{
 
 use console::style;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use rand::RngExt;
 
 fn main() {
     println!("IMAGEPAL v0.1\n");

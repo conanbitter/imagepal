@@ -4,14 +4,14 @@ use image::ImageReader;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::{
     path::PathBuf,
-    thread,
     time::{Duration, SystemTime},
 };
 use unicode_ellipsis::truncate_str_leading;
 
-use crate::color::ColorCube;
+use crate::{color::ColorCube, palgen::PalGen};
 
 mod color;
+mod palgen;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -19,8 +19,114 @@ struct Args {
     files: Vec<PathBuf>,
 }
 
-fn count_digits(val: usize) -> u32 {
+fn count_digits(val: u64) -> u32 {
     val.checked_ilog10().unwrap_or(0) + 1
+}
+
+pub struct CalcStatus {
+    step_bar: ProgressBar,
+    attempt_bar: ProgressBar,
+    moved_spinner: ProgressBar,
+    distance_spinner: ProgressBar,
+
+    max_steps: u64,
+    time_step: SystemTime,
+}
+
+impl CalcStatus {
+    const MAX_UPDATE_PERIOD: Duration = Duration::from_millis(500);
+
+    pub fn new(multi: &MultiProgress, max_attempts: u64, max_steps: u64) -> CalcStatus {
+        let moved_spinner = multi.add(ProgressBar::new_spinner());
+        let distance_spinner = multi.add(ProgressBar::new_spinner());
+        let step_bar = multi.add(ProgressBar::new(max_steps));
+        let attempt_bar = multi.add(ProgressBar::new(max_attempts * max_steps));
+
+        moved_spinner.set_style(ProgressStyle::with_template("Colors changed: {msg:.yellow}").unwrap());
+        distance_spinner.set_style(ProgressStyle::with_template("Total error:    {msg:.yellow}").unwrap());
+
+        const LABELS_LENGTH_DIFF: u32 = 3;
+
+        let steps_length = count_digits(max_steps);
+        let att_length = count_digits(max_attempts);
+        let (steps_padding, att_padding) = {
+            let steps_label_length = steps_length * 2 + 1;
+            let att_label_length = att_length * 2 + 1;
+            if steps_label_length - att_label_length > LABELS_LENGTH_DIFF {
+                (0, steps_label_length - att_label_length - LABELS_LENGTH_DIFF)
+            } else if steps_label_length - att_label_length < LABELS_LENGTH_DIFF {
+                (att_label_length + LABELS_LENGTH_DIFF - steps_label_length, 0)
+            } else {
+                (0, 0)
+            }
+        };
+
+        let step_template = format!(
+            "\nStep {}{{pos:>{}.yellow}}{}{{len:.yellow}} {}{{bar:40.green}}{} Elapsed:   {{elapsed_precise:.yellow}}",
+            " ".repeat(steps_padding as usize),
+            steps_length,
+            style("/").yellow(),
+            style("▕").green(),
+            style("▏").green()
+        );
+
+        step_bar.set_style(
+            ProgressStyle::with_template(&step_template)
+                .unwrap()
+                .progress_chars("█▉▊▋▌▍▎▏  "),
+        );
+
+        let attempt_template = format!(
+            "\nAttempt {}{{msg:>{}.yellow}}{} {}{{bar:40.green}}{} Remaining: {{eta_precise:.yellow}}",
+            " ".repeat(att_padding as usize),
+            att_length,
+            style(format!("/{}", max_attempts)).yellow(),
+            style("▕").green(),
+            style("▏").green()
+        );
+
+        attempt_bar.set_style(
+            ProgressStyle::with_template(&attempt_template)
+                .unwrap()
+                .progress_chars("█▉▊▋▌▍▎▏  "),
+        );
+
+        CalcStatus {
+            step_bar,
+            attempt_bar,
+            moved_spinner,
+            distance_spinner,
+
+            max_steps,
+            time_step: SystemTime::UNIX_EPOCH,
+        }
+    }
+
+    pub fn new_attempt(&mut self, attempt: u64) {
+        self.step_bar.set_position(0);
+        self.attempt_bar.set_position(attempt * self.max_steps);
+        self.attempt_bar.set_message((attempt + 1).to_string());
+
+        self.time_step = SystemTime::UNIX_EPOCH;
+    }
+
+    pub fn step(&mut self, moved: u64, distance: f64) {
+        self.step_bar.inc(1);
+        self.attempt_bar.inc(1);
+
+        if self.time_step.elapsed().unwrap() > CalcStatus::MAX_UPDATE_PERIOD {
+            self.moved_spinner.set_message(moved.to_string());
+            self.distance_spinner.set_message(distance.to_string());
+            self.time_step = SystemTime::now();
+        }
+    }
+
+    pub fn finish(&self) {
+        self.moved_spinner.finish_and_clear();
+        self.distance_spinner.finish_and_clear();
+        self.step_bar.finish_and_clear();
+        self.attempt_bar.finish_and_clear();
+    }
 }
 
 fn main() -> anyhow::Result<()> {
@@ -28,7 +134,7 @@ fn main() -> anyhow::Result<()> {
 
     let args = Args::parse_from(wild::args());
 
-    let filecount_size = count_digits(args.files.len());
+    let filecount_size = count_digits(args.files.len() as u64);
     let max_filename_size = 40 + 3 + filecount_size * 2;
 
     let m = MultiProgress::new();
@@ -68,9 +174,8 @@ fn main() -> anyhow::Result<()> {
         load_bar.inc(1);
     }
     load_bar.finish_and_clear();
-    title_spinner.finish_and_clear();
 
-    let mut colors = 0;
+    /*let mut colors = 0;
     for r in 0..256 {
         for g in 0..256 {
             for b in 0..256 {
@@ -79,74 +184,22 @@ fn main() -> anyhow::Result<()> {
                 }
             }
         }
-    }
-    println!("Unique colors: {}", colors);
-    Ok(())
+    }*/
 
     // CALCULATE PALETTE
-    /*
-        let moved_spin = m.add(ProgressBar::new_spinner());
-        let dist_spin = m.add(ProgressBar::new_spinner());
-        let op_bar = m.add(ProgressBar::new(200));
-        let total_bar = m.add(ProgressBar::new(5 * 300));
 
-        moved_spin.set_style(ProgressStyle::with_template("Colors changed: {msg:.yellow}").unwrap());
-        dist_spin.set_style(ProgressStyle::with_template("Total error:    {msg:.yellow}").unwrap());
+    title_spinner.set_message("Calculating colors");
 
-        let total_template = format!(
-            "\nStep {{pos:>3.yellow}}{}{{len:3.yellow}} {}{{bar:40.green}}{} Elapsed:   {{elapsed_precise:.yellow}}",
-            style("/").yellow(),
-            style("▕").green(),
-            style("▏").green()
-        );
+    let mut palgen = PalGen::new(256, cube)?;
 
-        op_bar.set_style(
-            ProgressStyle::with_template(&total_template)
-                .unwrap()
-                .progress_chars("█▉▊▋▌▍▎▏  "),
-        );
+    let mut calc_status = CalcStatus::new(&m, 5, 5000);
 
-        let total_template = format!(
-            "\nAttempt  {{msg:.yellow}}{} {}{{bar:40.green}}{} Remaining: {{eta_precise:.yellow}}",
-            style("/5").yellow(),
-            style("▕").green(),
-            style("▏").green()
-        );
+    palgen.run(&mut calc_status, 5, 5000)?;
 
-        total_bar.set_style(
-            ProgressStyle::with_template(&total_template)
-                .unwrap()
-                .progress_chars("█▉▊▋▌▍▎▏  "),
-        );
+    calc_status.finish();
+    title_spinner.finish_and_clear();
 
-        const MAX_DURATION: Duration = Duration::from_millis(500);
+    println!("Done!");
 
-        title_spinner.set_message("Calculating colors");
-
-        for i in 0..5 {
-            op_bar.set_position(0);
-            total_bar.set_position(i * 300);
-            total_bar.set_message((i + 1).to_string());
-            let mut now = SystemTime::UNIX_EPOCH;
-            for j in 0..200 {
-                thread::sleep(Duration::from_millis(5));
-                op_bar.inc(1);
-                total_bar.inc(1);
-                title_spinner.tick();
-                if now.elapsed().unwrap() > MAX_DURATION {
-                    moved_spin.set_message((j * 10).to_string());
-                    dist_spin.set_message((200.0 / (j as f64 + 0.0001)).to_string());
-                    now = SystemTime::now();
-                }
-            }
-        }
-        moved_spin.finish_and_clear();
-        dist_spin.finish_and_clear();
-        op_bar.finish_and_clear();
-        total_bar.finish_and_clear();
-
-        title_spinner.finish_and_clear();
-
-        println!("Done!");
-    */
+    Ok(())
 }

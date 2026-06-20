@@ -180,17 +180,18 @@ impl PalGen {
             self.init_centroids();
             status.new_attempt(attempt);
 
-            for _ in 0..max_steps {
+            for step in 0..max_steps {
                 self.calc_segments();
 
                 if self.points_changed == 0 {
-                    status.step(self.points_changed, self.total_distance);
+                    status.reduce_total(max_steps - step);
+                    status.step(self.points_changed, self.total_distance, true);
                     break;
                 }
 
                 self.calc_centroids();
 
-                status.step(self.points_changed, self.total_distance);
+                status.step(self.points_changed, self.total_distance, false);
             }
 
             self.calc_segments();

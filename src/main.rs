@@ -4,11 +4,15 @@ use image::ImageReader;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::{
     path::PathBuf,
+    str::FromStr,
     time::{Duration, SystemTime},
 };
 use unicode_ellipsis::truncate_str_leading;
 
-use crate::{color::ColorCube, palgen::PalGen};
+use crate::{
+    color::{ColorCube, save_palette},
+    palgen::PalGen,
+};
 
 mod color;
 mod palgen;
@@ -31,6 +35,7 @@ pub struct CalcStatus {
 
     max_steps: u64,
     time_step: SystemTime,
+    total_steps: u64,
 }
 
 impl CalcStatus {
@@ -40,7 +45,8 @@ impl CalcStatus {
         let moved_spinner = multi.add(ProgressBar::new_spinner());
         let distance_spinner = multi.add(ProgressBar::new_spinner());
         let step_bar = multi.add(ProgressBar::new(max_steps));
-        let attempt_bar = multi.add(ProgressBar::new(max_attempts * max_steps));
+        let total_steps = max_attempts * max_steps;
+        let attempt_bar = multi.add(ProgressBar::new(total_steps));
 
         moved_spinner.set_style(ProgressStyle::with_template("Colors changed: {msg:.yellow}").unwrap());
         distance_spinner.set_style(ProgressStyle::with_template("Total error:    {msg:.yellow}").unwrap());
@@ -99,26 +105,32 @@ impl CalcStatus {
 
             max_steps,
             time_step: SystemTime::UNIX_EPOCH,
+            total_steps,
         }
     }
 
     pub fn new_attempt(&mut self, attempt: u64) {
         self.step_bar.set_position(0);
-        self.attempt_bar.set_position(attempt * self.max_steps);
+        //self.attempt_bar.set_position(attempt * self.max_steps);
         self.attempt_bar.set_message((attempt + 1).to_string());
 
         self.time_step = SystemTime::UNIX_EPOCH;
     }
 
-    pub fn step(&mut self, moved: u64, distance: f64) {
+    pub fn step(&mut self, moved: u64, distance: f64, force: bool) {
         self.step_bar.inc(1);
         self.attempt_bar.inc(1);
 
-        if self.time_step.elapsed().unwrap() > CalcStatus::MAX_UPDATE_PERIOD {
+        if force || self.time_step.elapsed().unwrap() > CalcStatus::MAX_UPDATE_PERIOD {
             self.moved_spinner.set_message(moved.to_string());
             self.distance_spinner.set_message(distance.to_string());
             self.time_step = SystemTime::now();
         }
+    }
+
+    pub fn reduce_total(&mut self, diff: u64) {
+        self.total_steps -= diff;
+        self.attempt_bar.set_length(self.total_steps);
     }
 
     pub fn finish(&self) {
@@ -192,13 +204,14 @@ fn main() -> anyhow::Result<()> {
 
     let mut palgen = PalGen::new(256, cube)?;
 
-    let mut calc_status = CalcStatus::new(&m, 5, 5000);
+    let mut calc_status = CalcStatus::new(&m, 5, 2000);
 
-    palgen.run(&mut calc_status, 5, 5000)?;
+    let result_palette = palgen.run(&mut calc_status, 5, 2000)?;
 
     calc_status.finish();
     title_spinner.finish_and_clear();
 
+    save_palette(&result_palette, PathBuf::from_str("result.ipal")?)?;
     println!("Done!");
 
     Ok(())

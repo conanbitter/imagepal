@@ -2,7 +2,7 @@ use clap::{Args, Parser, Subcommand};
 use console::style;
 use image::ImageReader;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use std::{path::PathBuf, str::FromStr, time::Duration};
+use std::{path::PathBuf, time::Duration};
 
 use crate::{
     color::{ColorCube, save_palette},
@@ -34,6 +34,18 @@ enum Commands {
 struct GenArgs {
     #[arg(required = true)]
     files: Vec<PathBuf>,
+
+    #[arg(short, long, required = true, help = "name for the palette file")]
+    output: PathBuf,
+
+    #[arg(short, long, default_value_t = 256, help = "target number of colors")]
+    colors: u32,
+
+    #[arg(short, long, default_value_t = 5, help = "number of attempts")]
+    attempts: u64,
+
+    #[arg(short, long, default_value_t = 1000, help = "maximum number of steps")]
+    steps: u64,
 }
 
 fn command_generate(args: GenArgs) -> anyhow::Result<()> {
@@ -78,31 +90,32 @@ fn command_generate(args: GenArgs) -> anyhow::Result<()> {
 
     title_spinner.set_message("Calculating colors");
 
-    let mut palgen = PalGen::new(256, cube)?;
+    let mut palgen = PalGen::new(args.colors, cube)?;
 
-    let mut calc_status = CalcStatus::new(&multi, 5, 2000);
+    let mut calc_status = CalcStatus::new(&multi, args.attempts, args.steps);
 
-    let result_palette = palgen.run(&mut calc_status, 5, 2000)?;
+    let result_palette = palgen.run(&mut calc_status, args.attempts, args.steps)?;
 
     calc_status.finish();
 
-    save_palette(&result_palette, PathBuf::from_str("result.ipal")?)?;
+    save_palette(&result_palette, args.output.clone())?;
 
     title_spinner.finish_and_clear();
     println!("Done!");
+    println!("Palette saved to \"{}\"", args.output.to_string_lossy());
 
     Ok(())
 }
 
 fn main() -> anyhow::Result<()> {
+    let args = AppArgs::parse_from(wild::args());
+
     println!(
         "{}\n{} {}",
         style("╭──────────").green(),
         style("│").green(),
         style("IMAGEPAL").bold()
     );
-
-    let args = AppArgs::parse_from(wild::args());
 
     match args.command {
         Commands::Generate(gen_args) => command_generate(gen_args)?,

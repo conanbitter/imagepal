@@ -1,4 +1,9 @@
-use std::ops;
+use std::{
+    fs::File,
+    io::{BufWriter, Write},
+    ops,
+    path::PathBuf,
+};
 
 use image::RgbImage;
 
@@ -92,3 +97,18 @@ impl ColorCube {
 }
 
 pub type Palette = Vec<Color>;
+
+pub fn save_palette(palette: &Palette, filename: PathBuf) -> anyhow::Result<()> {
+    let file = File::create(filename)?;
+    let mut writer = BufWriter::new(file);
+
+    for color in palette {
+        writer.write_all(&color.r.to_le_bytes())?;
+        writer.write_all(&color.g.to_le_bytes())?;
+        writer.write_all(&color.b.to_le_bytes())?;
+    }
+
+    writer.flush()?;
+
+    Ok(())
+}

@@ -6,8 +6,8 @@ use rand::RngExt;
 use rayon::prelude::*;
 
 use crate::{
-    CalcStatus,
     color::{Color, ColorCube, Palette},
+    report::CalcStatus,
 };
 
 struct ColorPoint {

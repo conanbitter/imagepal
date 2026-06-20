@@ -63,7 +63,6 @@ pub struct CalcStatus {
     moved_spinner: ProgressBar,
     distance_spinner: ProgressBar,
 
-    max_steps: u64,
     time_step: SystemTime,
     total_steps: u64,
 }
@@ -133,7 +132,6 @@ impl CalcStatus {
             moved_spinner,
             distance_spinner,
 
-            max_steps,
             time_step: SystemTime::UNIX_EPOCH,
             total_steps,
         }

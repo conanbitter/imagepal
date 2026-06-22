@@ -5,7 +5,7 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::{path::PathBuf, time::Duration};
 
 use crate::{
-    color::ColorCube,
+    color::{ColorCube, Palette},
     palgen::PalGen,
     report::{CalcStatus, LoadStatus},
 };
@@ -28,6 +28,7 @@ struct AppArgs {
 #[derive(Subcommand, Debug)]
 enum Commands {
     Generate(GenArgs),
+    Export(ExpArgs),
 }
 
 #[derive(Args, Debug)]
@@ -46,6 +47,15 @@ struct GenArgs {
 
     #[arg(short, long, default_value_t = 1000, help = "maximum number of steps")]
     steps: u64,
+}
+
+#[derive(Args, Debug)]
+struct ExpArgs {
+    #[arg(required = true)]
+    file: PathBuf,
+
+    #[arg(short, long, required = true, help = "name for the exported palette file")]
+    output: PathBuf,
 }
 
 fn command_generate(args: GenArgs) -> anyhow::Result<()> {
@@ -107,6 +117,17 @@ fn command_generate(args: GenArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn command_export(args: ExpArgs) -> anyhow::Result<()> {
+    println!("{} Export palette\n", style("│").green());
+
+    let palette = Palette::flom_file(args.file)?;
+    palette.export(args.output.clone())?;
+
+    println!("Palette exported to \"{}\"", args.output.to_string_lossy());
+
+    Ok(())
+}
+
 fn main() -> anyhow::Result<()> {
     let args = AppArgs::parse_from(wild::args());
 
@@ -119,6 +140,7 @@ fn main() -> anyhow::Result<()> {
 
     match args.command {
         Commands::Generate(gen_args) => command_generate(gen_args)?,
+        Commands::Export(exp_args) => command_export(exp_args)?,
     }
 
     Ok(())

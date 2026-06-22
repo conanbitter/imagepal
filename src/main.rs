@@ -5,7 +5,7 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::{path::PathBuf, time::Duration};
 
 use crate::{
-    color::{ColorCube, save_palette},
+    color::ColorCube,
     palgen::PalGen,
     report::{CalcStatus, LoadStatus},
 };
@@ -98,7 +98,7 @@ fn command_generate(args: GenArgs) -> anyhow::Result<()> {
 
     calc_status.finish();
 
-    save_palette(&result_palette, args.output.clone())?;
+    result_palette.save(args.output.clone())?;
 
     title_spinner.finish_and_clear();
     println!("Done!");

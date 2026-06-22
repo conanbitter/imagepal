@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{BufWriter, Write},
+    io::{self, BufReader, BufWriter, Read, Write},
     ops,
     path::PathBuf,
 };
@@ -96,19 +96,78 @@ impl ColorCube {
     }
 }
 
-pub type Palette = Vec<Color>;
+pub struct Palette(pub Vec<Color>);
 
-pub fn save_palette(palette: &Palette, filename: PathBuf) -> anyhow::Result<()> {
-    let file = File::create(filename)?;
-    let mut writer = BufWriter::new(file);
+impl Palette {
+    pub fn flom_file(filename: PathBuf) -> anyhow::Result<Palette> {
+        let file = File::open(filename)?;
+        let mut reader = BufReader::new(file);
 
-    for color in palette {
-        writer.write_all(&color.r.to_le_bytes())?;
-        writer.write_all(&color.g.to_le_bytes())?;
-        writer.write_all(&color.b.to_le_bytes())?;
+        let mut buffer = [0u8; 24];
+        let mut result = Palette(vec![]);
+
+        loop {
+            match reader.read_exact(&mut buffer) {
+                Ok(_) => {
+                    let color = Color {
+                        r: f64::from_le_bytes(buffer[0..8].try_into().unwrap()),
+                        g: f64::from_le_bytes(buffer[8..16].try_into().unwrap()),
+                        b: f64::from_le_bytes(buffer[16..24].try_into().unwrap()),
+                    };
+
+                    result.0.push(color);
+                }
+                Err(ref e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
+                Err(e) => return Err(anyhow::Error::from(e)),
+            }
+        }
+
+        Ok(result)
     }
 
-    writer.flush()?;
+    pub fn save(&self, filename: PathBuf) -> anyhow::Result<()> {
+        let file = File::create(filename)?;
+        let mut writer = BufWriter::new(file);
 
-    Ok(())
+        for color in &self.0 {
+            writer.write_all(&color.r.to_le_bytes())?;
+            writer.write_all(&color.g.to_le_bytes())?;
+            writer.write_all(&color.b.to_le_bytes())?;
+        }
+
+        writer.flush()?;
+
+        Ok(())
+    }
+
+    pub fn export(&self, filename: PathBuf) -> anyhow::Result<()> {
+        let file = File::create(filename)?;
+        let mut writer = BufWriter::new(file);
+
+        let mut buffer = [0u8; 4];
+
+        for color in &self.0 {
+            buffer[1] = (color.r.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+            buffer[2] = (color.g.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+            buffer[3] = (color.b.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+            writer.write_all(&buffer)?;
+        }
+
+        writer.flush()?;
+
+        Ok(())
+    }
+
+    pub fn find_index(&self, color: Color) -> i32 {
+        let mut best_index = 0;
+        let mut best_difference = f64::MAX;
+        for (i, palcol) in self.0.iter().enumerate() {
+            let difference = palcol.distance(color);
+            if difference < best_difference {
+                best_difference = difference;
+                best_index = i;
+            }
+        }
+        best_index as i32
+    }
 }

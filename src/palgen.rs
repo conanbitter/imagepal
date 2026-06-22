@@ -41,7 +41,7 @@ pub struct PalGen {
     points_changed: u64,
 
     best_error: f64,
-    best_palette: Palette,
+    best_palette: Vec<Color>,
 }
 
 impl PalGen {
@@ -204,6 +204,6 @@ impl PalGen {
         }
 
         self.best_palette.sort_by(|a, b| a.luma().total_cmp(&b.luma()));
-        Ok(self.best_palette.clone())
+        Ok(Palette(self.best_palette.clone()))
     }
 }

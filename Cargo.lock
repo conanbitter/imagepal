@@ -553,6 +553,7 @@ dependencies = [
  "image",
  "indicatif",
  "itertools 0.15.0",
+ "png",
  "rand 0.10.1",
  "rayon",
  "unicode-ellipsis",

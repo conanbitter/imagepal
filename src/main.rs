@@ -1,11 +1,16 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use console::style;
 use image::ImageReader;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use std::{path::PathBuf, time::Duration};
+use std::{
+    fs::File,
+    io::{BufWriter, Write},
+    path::PathBuf,
+    time::Duration,
+};
 
 use crate::{
-    color::{ColorCube, Palette},
+    color::{Color, ColorCube, Palette},
     palgen::PalGen,
     report::{CalcStatus, LoadStatus},
 };
@@ -59,6 +64,12 @@ struct ExpArgs {
     output: PathBuf,
 }
 
+#[derive(Debug, Copy, Clone, ValueEnum)]
+enum ConvFormat {
+    Png,
+    Raw,
+}
+
 #[derive(Args, Debug)]
 struct ConvArgs {
     #[arg(required = true)]
@@ -66,6 +77,12 @@ struct ConvArgs {
 
     #[arg(short, long, required = true, help = "folder for converted files")]
     output: PathBuf,
+
+    #[arg(short, long, required = true, help = "palette file")]
+    palette: PathBuf,
+
+    #[arg(short, long, value_enum, default_value_t = ConvFormat::Raw,  help = "output format")]
+    format: ConvFormat,
 }
 
 fn command_generate(args: GenArgs) -> anyhow::Result<()> {
@@ -141,19 +158,71 @@ fn command_export(args: ExpArgs) -> anyhow::Result<()> {
 fn command_convert(args: ConvArgs) -> anyhow::Result<()> {
     println!("{} Convert images\n", style("│").green());
 
-    for filename in args.files {
-        let stem = filename.file_stem().expect("Invalid file name");
-        let mut new_name = args.output.join(stem);
-        new_name.set_extension("png");
+    let fpal = Palette::flom_file(args.palette)?;
 
-        let img = ImageReader::open(filename)?.decode()?.to_rgb8();
+    match args.format {
+        ConvFormat::Png => {
+            let ppal = fpal.get_png_palette();
 
-        for color in img.pixels() {
-            //self.0[color[0] as usize][color[1] as usize][color[2] as usize] += 1;
+            for filename in args.files {
+                let stem = filename.file_stem().expect("Invalid file name");
+                let mut new_name = args.output.join(stem);
+                new_name.set_extension("png");
+
+                println!("Saving {}", new_name.display());
+
+                let file = File::create(new_name)?;
+                let writer = BufWriter::new(file);
+
+                let img = ImageReader::open(filename)?.decode()?.to_rgb8();
+                let mut encoder = png::Encoder::new(writer, img.width(), img.height());
+                encoder.set_color(png::ColorType::Indexed);
+                encoder.set_depth(png::BitDepth::Eight);
+                encoder.set_palette(&ppal);
+
+                let mut indices = Vec::with_capacity((img.width() * img.height()) as usize);
+
+                for color in img.pixels() {
+                    let fcolor = Color::new(color[0] as i32, color[1] as i32, color[2] as i32);
+                    let index = fpal.find_index(fcolor) as u8;
+                    indices.push(index);
+                }
+
+                let mut writer = encoder.write_header()?;
+                writer.write_image_data(&indices)?;
+                writer.finish()?;
+            }
         }
+        ConvFormat::Raw => {
+            for filename in args.files {
+                let stem = filename.file_stem().expect("Invalid file name");
+                let mut new_name = args.output.join(stem);
+                new_name.set_extension("raw");
 
-        println!("{}", new_name.display());
+                println!("Saving {}", new_name.display());
+
+                let file = File::create(new_name)?;
+                let mut writer = BufWriter::new(file);
+
+                let img = ImageReader::open(filename)?.decode()?.to_rgb8();
+                let width = img.width();
+                let height = img.height();
+                writer.write_all(&width.to_le_bytes())?;
+                writer.write_all(&height.to_le_bytes())?;
+
+                let mut buffer = [0u8; 1];
+
+                for color in img.pixels() {
+                    let fcolor = Color::new(color[0] as i32, color[1] as i32, color[2] as i32);
+                    buffer[0] = fpal.find_index(fcolor) as u8;
+                    writer.write_all(&buffer)?;
+                }
+
+                writer.flush()?;
+            }
+        }
     }
+
     Ok(())
 }
 

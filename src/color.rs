@@ -98,6 +98,10 @@ impl ColorCube {
 
 pub struct Palette(pub Vec<Color>);
 
+fn channel_to_byte(channel: f64) -> u8 {
+    (channel.clamp(0.0, 1.0) * 255.0 + 0.5) as u8
+}
+
 impl Palette {
     pub fn flom_file(filename: PathBuf) -> anyhow::Result<Palette> {
         let file = File::open(filename)?;
@@ -147,15 +151,27 @@ impl Palette {
         let mut buffer = [0u8; 4];
 
         for color in &self.0 {
-            buffer[1] = (color.r.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
-            buffer[2] = (color.g.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
-            buffer[3] = (color.b.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+            buffer[1] = channel_to_byte(color.r);
+            buffer[2] = channel_to_byte(color.g);
+            buffer[3] = channel_to_byte(color.b);
             writer.write_all(&buffer)?;
         }
 
         writer.flush()?;
 
         Ok(())
+    }
+
+    pub fn get_png_palette(&self) -> Vec<u8> {
+        let mut result = Vec::with_capacity(self.0.len() * 3);
+
+        for color in &self.0 {
+            result.push(channel_to_byte(color.r));
+            result.push(channel_to_byte(color.g));
+            result.push(channel_to_byte(color.b));
+        }
+
+        result
     }
 
     pub fn find_index(&self, color: Color) -> i32 {

@@ -29,6 +29,7 @@ struct AppArgs {
 enum Commands {
     Generate(GenArgs),
     Export(ExpArgs),
+    Convert(ConvArgs),
 }
 
 #[derive(Args, Debug)]
@@ -55,6 +56,15 @@ struct ExpArgs {
     file: PathBuf,
 
     #[arg(short, long, required = true, help = "name for the exported palette file")]
+    output: PathBuf,
+}
+
+#[derive(Args, Debug)]
+struct ConvArgs {
+    #[arg(required = true)]
+    files: Vec<PathBuf>,
+
+    #[arg(short, long, required = true, help = "folder for converted files")]
     output: PathBuf,
 }
 
@@ -128,6 +138,25 @@ fn command_export(args: ExpArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn command_convert(args: ConvArgs) -> anyhow::Result<()> {
+    println!("{} Convert images\n", style("│").green());
+
+    for filename in args.files {
+        let stem = filename.file_stem().expect("Invalid file name");
+        let mut new_name = args.output.join(stem);
+        new_name.set_extension("png");
+
+        let img = ImageReader::open(filename)?.decode()?.to_rgb8();
+
+        for color in img.pixels() {
+            //self.0[color[0] as usize][color[1] as usize][color[2] as usize] += 1;
+        }
+
+        println!("{}", new_name.display());
+    }
+    Ok(())
+}
+
 fn main() -> anyhow::Result<()> {
     let args = AppArgs::parse_from(wild::args());
 
@@ -141,6 +170,7 @@ fn main() -> anyhow::Result<()> {
     match args.command {
         Commands::Generate(gen_args) => command_generate(gen_args)?,
         Commands::Export(exp_args) => command_export(exp_args)?,
+        Commands::Convert(conv_args) => command_convert(conv_args)?,
     }
 
     Ok(())
